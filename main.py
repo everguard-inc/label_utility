@@ -1,9 +1,9 @@
 import cv2
 import os
 import json
-IMAGE_FOLDER="/home/vova/everguard/datastes/new_split_15_09/vest_helmet_split_15_09/labeling_train/parts/part_2/img/"
-JSON_PATH='/home/vova/everguard/datastes/new_split_15_09/vest_helmet_split_15_09/labeling_train/parts/part_2/annotations.json'
-WRITE_FOLDER = "/home/vova/everguard/datastes/new_split_15_09/vest_helmet_split_15_09/labeling_train/parts/part_2/write/"
+IMAGE_FOLDER="/Users/serhii/Downloads/datasets/vest_helmet_final/images/"
+JSON_PATH='/Users/serhii/Downloads/full_train_new_without_height_width.json'
+WRITE_FOLDER = "/Users/serhii/Downloads/datasets/vest_helmet_final/testing_json/"
 
 
 class Color:
@@ -62,10 +62,11 @@ def draw_bboxes(boxes,img):
             if int(i[4])==5:
                 cv2.rectangle(img, (int(i[0]),int(i[1]),int(i[2]),int(i[3])), Color.Purple, 4)
 
-
 c=0
 for i in range(len(images)):
     drawing=False
+    deleting=False
+    invisible=False
     if i==0:
         pop=0
     if pop==2:
@@ -90,7 +91,36 @@ for i in range(len(images)):
     x1,y1 = -1,-1
     while pop<1:
         def onMouse(event, x, y, flags, param):
-            global x1,y1,draw_mouse,mode,drawing
+            global x1,y1,draw_mouse,mode,drawing,deleting,invisible
+            if deleting==True:
+                selected_boxes=[]
+                try:
+                    final_boxes
+                except NameError:
+                    final_boxes=boxes
+                img=cv2.imread(path)
+                draw_bboxes(final_boxes,img)
+                if event == cv2.EVENT_LBUTTONDOWN:
+                    point=x,y
+                    numbers=[]
+                    for c in range(len(final_boxes)):
+                        if final_boxes[c][0]<x<final_boxes[c][2]+final_boxes[c][0] and final_boxes[c][1]<y<final_boxes[c][3]+final_boxes[c][1]:
+                            selected_boxes.append(final_boxes[c])
+                            numbers.append(c)
+                    if len(selected_boxes)>1:
+                        img=cv2.imread(path)
+                        for b,i in enumerate(selected_boxes):
+                            img=cv2.rectangle(img, (int(i[0]),int(i[1]),int(i[2]),int(i[3])), (255, 0, 0) , 4)
+                            img=cv2.putText(img, str(b), (int(i[0]),int(i[1])), cv2.FONT_HERSHEY_SIMPLEX , int(img.shape[0]/300), (0,50,0), int(img.shape[0]/100), cv2.LINE_AA)
+                        cv2.imshow('image',img)
+                        cv2.waitKey()
+                        num = input("Which one you want to delete? 1,2 etc.\n")
+                        print(final_boxes)
+                        del final_boxes[numbers[int(int(num))]]
+                    else:
+                        del final_boxes[numbers[0]]
+                    deleting=False
+                    
             if drawing==True:
                 try:
                     final_boxes
@@ -122,7 +152,7 @@ for i in range(len(images)):
                     final_boxes.append([final_x1,final_y1,final_x2-final_x1,final_y2-final_y1,nums])
                     drawing=False
                 
-            if drawing==False:
+            if invisible==True:
                 selected_boxes=[]
                 try:
                     final_boxes
@@ -142,17 +172,13 @@ for i in range(len(images)):
                             img=cv2.putText(img, str(b), (int(i[0]),int(i[1])), cv2.FONT_HERSHEY_SIMPLEX , int(img.shape[0]/300), (0,50,0), int(img.shape[0]/100), cv2.LINE_AA)
                         cv2.imshow('image',img)
                         cv2.waitKey()
-                        num = input("Which one are invisible? Input d if you want to delete like d0\n")
-                        if "d" in num:
-                            del final_boxes[numbers[int(int(num.split("d")[1]))]]
+                        num = input("Which one are invisible?\n")
+                        if final_boxes[c][4]==2 or final_boxes[c][4]==3:
+                                final_boxes[numbers[int(num)]][4]=5
                         else:
-                            if final_boxes[c][4]==2 or final_boxes[c][4]==3:
-                                    final_boxes[numbers[int(num)]][4]=5
-                            else:
-                                    final_boxes[numbers[int(num)]][4]=4
+                            final_boxes[numbers[int(num)]][4]=4
 
                     else:
-
                         for c in range(len(final_boxes)):
                             if final_boxes[c][0]<x<final_boxes[c][2]+final_boxes[c][0] and final_boxes[c][1]<y<final_boxes[c][3]+final_boxes[c][1]:
                                 if final_boxes[c][4]==2 or final_boxes[c][4]==3:
@@ -185,7 +211,7 @@ for i in range(len(images)):
                                 if final_boxes[c][4]>1:
                                     final_boxes[c][4]-=2
         
-
+                    invisible=False
         cv2.namedWindow('image',cv2.WINDOW_FULLSCREEN)
         cv2.setMouseCallback('image', onMouse)
         k=cv2.waitKey()
@@ -199,7 +225,10 @@ for i in range(len(images)):
             cc[4]=int(cc[4])
         if k==ord("w"):
             drawing=True
-
+        if k==ord("d"):
+            deleting=True
+        if k==ord("i"):
+            invisible=True  
         if k==ord("f"):
             img=cv2.imread(path)
             if final_boxes is None:
