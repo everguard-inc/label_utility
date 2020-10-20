@@ -2,10 +2,12 @@ import argparse
 import json
 import os
 import sys
+from copy import deepcopy
 
 from typing import Union, List, Dict
 
 import cv2
+import numpy as np
 
 import config as cfg
 from data_structures import BBox, Annotation, Point
