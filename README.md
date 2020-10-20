@@ -2,9 +2,16 @@
 
 #### Run
 ```
-python3 main.py --input_coco <input_coco_path> \
---output_folder <output_folder_path> \
---images <images_folder_path>
+python main.py [-h] [--input_coco INPUT_COCO] [--output_folder OUTPUT_FOLDER]
+               [--images IMAGES] [--start_frame_id START_FRAME_ID]
+
+optional arguments:
+  -h, --help                        show this help message and exit
+  --input_coco INPUT_COCO           path to json with annotations in COCO format
+  --output_folder OUTPUT_FOLDER     directory to save corrected annotations
+  --images IMAGES                   directory with images
+  --start_frame_id START_FRAME_ID   frame number from which to start labeling. 
+                                    If argument not specified the tool iterates over unlabeled frames only
 ```
 
 #### Control keys
