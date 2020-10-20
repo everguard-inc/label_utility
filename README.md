@@ -45,5 +45,6 @@ python3 main.py --input_coco <input_coco_path> \
 1. Press D
 2. Left click on bbox
 
-
+#### Select overlapping bboxes
+When the user clicks on a point belonging to more than one bbox, the tool prompts him to press the bbox index on the keyboard.
 

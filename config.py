@@ -52,11 +52,17 @@ ClassHotKeys = {
     ord("5"): ClassLabel.INVISIBLE_IN_VEST,
 }
 
+NumberHotKeys = {ord(str(num)): num for num in range(10)}
 
 class LabelingMode(IntEnum):
     DELETION = 1
     DRAWING = 2
     SET_LABEL = 3
+
+
+class CanvasState(IntEnum):
+    ASK_BBOX_INDEX = 1
+    NORMAL = 2
 
 
 CLASS_COLORS = {

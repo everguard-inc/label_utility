@@ -21,9 +21,24 @@ class Canvas:
         self._mode: cfg.LabelingMode = cfg.LabelingMode.DRAWING
         self._clear_image: np.ndarray
         self._selected_class_label: cfg.ClassLabel = cfg.DEFAULT_CLASS_LABEL
+        self._render_with_id: bool = False
+        self._state: cfg.CanvasState = cfg.CanvasState.NORMAL
         cv2.namedWindow(cfg.WINDOW_NAME, cv2.WINDOW_NORMAL | cv2.WINDOW_GUI_NORMAL)
         cv2.setMouseCallback(cfg.WINDOW_NAME, self._on_mouse)
         cv2.resizeWindow(cfg.WINDOW_NAME, 900, 600)
+
+    @property
+    def state(self):
+        return self._state
+
+    def change_bbox_by_id(self, bbox_id: int):
+        if self._mode == cfg.LabelingMode.DELETION:
+            self._delete_bbox_by_id(bbox_id)
+        elif self._mode == cfg.LabelingMode.SET_LABEL:
+            self._set_label_to_bbox_by_id(bbox_id)
+
+        self._change_state(cfg.CanvasState.NORMAL)
+        self.refresh()
 
     def set_mode(self, mode: cfg.LabelingMode):
         self._mode = mode
@@ -33,6 +48,7 @@ class Canvas:
 
     def refresh(self):
         self._render_bboxes(self._bboxes)
+        self._turn_off_render_with_id()
 
     def set_class_label(self, class_label: cfg.ClassLabel):
         self._selected_class_label = class_label
@@ -65,33 +81,64 @@ class Canvas:
     def _on_mouse(self, event, x, y, flags, param):
         point = Point(x, y)
         if event == cv2.EVENT_LBUTTONDOWN:
-            if self._mode == cfg.LabelingMode.DELETION:
-                self._delete_bbox(point)
-            if self._mode == cfg.LabelingMode.SET_LABEL:
-                self._set_label(point)
+            if self.state == cfg.CanvasState.NORMAL:
+                if self._mode == cfg.LabelingMode.DELETION:
+                    self._delete_bbox_contains_point(point)
+                if self._mode == cfg.LabelingMode.SET_LABEL:
+                    self._set_label_to_bbox_contains_point(point)
+                self.refresh()
 
-            self.refresh()
-
-    def _delete_bbox(self, point: Point):
-        bbox_id = self._get_selected_bbox_id(point)
-        if bbox_id is not None:
-            print(f"bbox with id {bbox_id} deleted")
+    def _delete_bbox_by_id(self, bbox_id: int):
+        if len(self._bboxes) > bbox_id:
             del self._bboxes[bbox_id]
+        else:
+            print('no element with this id')
 
-    def _set_label(self, point: Point):
+    def _delete_bbox_contains_point(self, point: Point):
         bbox_id = self._get_selected_bbox_id(point)
         if bbox_id is not None:
+            self._delete_bbox_by_id(bbox_id)
+            print(f"bbox with id {bbox_id} deleted")
+
+    def _set_label_to_bbox_by_id(self, bbox_id: int):
+        if len(self._bboxes) > bbox_id:
             self._bboxes[bbox_id].label = self._selected_class_label
+        else:
+            print('no element with this id')
+
+    def _set_label_to_bbox_contains_point(self, point: Point):
+        bbox_id = self._get_selected_bbox_id(point)
+        if bbox_id is not None:
+            self._set_label_to_bbox_by_id(bbox_id)
             print(f"set label {self._selected_class_label} for bbox with id {bbox_id}")
 
     def _get_selected_bbox_id(self, point: Point) -> Union[int, None]:
-        idx = None
+        selected_id = list()
         for i, bbox in enumerate(self._bboxes):
             if point in bbox:
-                idx = i
-                break
+                selected_id.append(i)
 
-        return idx
+        # if clicked on more than one bbox simultaneously
+        if len(selected_id) > 1:
+            print('selected bboxes with id: ', selected_id)
+            self._change_state(cfg.CanvasState.ASK_BBOX_INDEX)
+            self._turn_on_render_with_id()
+            print('press key with bbox id you want to select')
+            return None
+
+        elif len(selected_id) == 1:
+            return selected_id[0]
+
+        return None
+
+    def _turn_on_render_with_id(self):
+        self._render_with_id = True
+
+    def _turn_off_render_with_id(self):
+        self._render_with_id = False
+
+    def _change_state(self, state: cfg.CanvasState):
+        self._state = state
 
     def _render_bboxes(self, bboxes: List[BBox], show_id=False):
         self._current_image = self._clear_image.copy()
@@ -105,7 +152,7 @@ class Canvas:
                 cfg.DEFAULT_BBOX_LINE_THICKNESS,
             )
 
-            if show_id:
+            if self._render_with_id:
                 self._current_image = cv2.putText(
                     self._current_image,
                     str(i),
@@ -165,10 +212,19 @@ class LabelingTool:
                 print("exiting")
                 self._quit()
 
-            for key, class_label in cfg.ClassHotKeys.items():
-                if k == key:
-                    print(f"selected class {class_label}")
-                    self._update_canvas_label(class_label)
+            if self._canvas.state == cfg.CanvasState.NORMAL:
+                for key, class_label in cfg.ClassHotKeys.items():
+                    if k == key:
+                        print(f"selected class {class_label}")
+                        self._update_canvas_label(class_label)
+
+            elif self._canvas.state == cfg.CanvasState.ASK_BBOX_INDEX:
+                for key, number_value in cfg.NumberHotKeys.items():
+                    if k == key:
+                        print(f"selected bbox id {number_value}")
+                        self._canvas.change_bbox_by_id(number_value)
+
+
 
     def _update_canvas_label(self, class_label: cfg.ClassLabel):
         self._canvas.set_class_label(class_label)
