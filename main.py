@@ -173,7 +173,7 @@ class Canvas:
 class LabelingTool:
     """Connects user with canvas"""
 
-    def __init__(self, annotations: str, output_folder: str, image_folder: str):
+    def __init__(self, annotations: str, output_folder: str, image_folder: str, start_frame_id: str=None):
         self._images_folder: str = image_folder
         self._output_folder: str = output_folder
         self._dir_skipped = os.path.join(self._output_folder, cfg.DIRECTORY_FOR_SKIPPED_NAME)
@@ -181,11 +181,21 @@ class LabelingTool:
         self._create_directories()
         self._canvas: Canvas = Canvas()
         self._source_annotations: Annotation = self._open_annotations(annotations)
-        self._skip_indices: List[int] = self._get_skip_image_list()
-        self._current_image_id = self._get_nearest_unlabeled_image_id(0)
+        self._skip_indices: List[int] = list()
+        if start_frame_id is None:
+            self._skip_indices = self._get_skip_image_list()
+        self._current_image_id: int = self._set_start_frame_id(start_frame_id)
         self._running: bool = True
         self._reload_canvas()
         self._run_event_loop()
+
+    def _set_start_frame_id(self, frame_id: Union[int, str]):
+        if frame_id is not None:
+            frame_id = int(frame_id)
+            if 0 <= frame_id < self._source_annotations.images_amount:
+                return frame_id
+        else:
+            return self._get_nearest_unlabeled_image_id(0)
 
     def _run_event_loop(self):
         while self._running:
@@ -200,18 +210,16 @@ class LabelingTool:
                 self._canvas.set_mode(cfg.LabelingMode.SET_LABEL)
                 print("name changing mode is set")
             elif k == cfg.HotKey.SkipImage:
-                self._skip_image()
                 print(
-                    f"image {self._source_annotations.get_image_name_by_id(self._current_image_id)} skipped"
+                    f"image id: {self._current_image_id}, image name: {self._source_annotations.get_image_name_by_id(self._current_image_id)} skipped"
                 )
+                self._skip_image()
             elif k == cfg.HotKey.UndoLabeling:
                 self._undo_changes()
                 print("changes reverted")
             elif k == cfg.HotKey.SaveAndOpenNext:
                 self._save_and_open_next()
-                print(
-                    f"opened image {self._source_annotations.get_image_name_by_id(self._current_image_id)}"
-                )
+                print(f'image id: {self._current_image_id}, image name: {self._source_annotations.get_image_name_by_id(self._current_image_id)} saved')
             elif k == cfg.HotKey.Quit:
                 print("exiting")
                 self._quit()
@@ -314,7 +322,6 @@ class LabelingTool:
         self._set_current_image_to_canvas()
         self._canvas.refresh()
         image_name = self._source_annotations.get_image_name_by_id(self._current_image_id)
-        print(f'image id: {self._current_image_id}, image name: {image_name}')
 
     def _iterate(self, direction: bool, step: int):
         self._update_current_image_id(direction, step)
@@ -338,6 +345,7 @@ if __name__ == "__main__":
     parser.add_argument("--input_coco")
     parser.add_argument("--output_folder")
     parser.add_argument("--images")
+    parser.add_argument("--start_frame_id")
     args = parser.parse_args()
 
-    ltool = LabelingTool(args.input_coco, args.output_folder, args.images)
+    ltool = LabelingTool(args.input_coco, args.output_folder, args.images, args.start_frame_id)
