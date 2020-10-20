@@ -2,11 +2,10 @@ import argparse
 import json
 import os
 import sys
-from copy import copy, deepcopy
+
 from typing import Union, List, Dict
 
 import cv2
-import numpy as np
 
 import config as cfg
 from data_structures import BBox, Annotation, Point
@@ -175,6 +174,9 @@ class LabelingTool:
     def __init__(self, annotations: str, output_folder: str, image_folder: str):
         self._images_folder: str = image_folder
         self._output_folder: str = output_folder
+        self._dir_skipped = os.path.join(self._output_folder, cfg.DIRECTORY_FOR_SKIPPED_NAME)
+        self._dir_labeled = os.path.join(self._output_folder, cfg.DIRECTORY_FOR_LABELED_NAME)
+        self._create_directories()
         self._canvas: Canvas = Canvas()
         self._source_annotations: Annotation = self._open_annotations(annotations)
         self._skip_indices: List[int] = self._get_skip_image_list()
@@ -224,16 +226,21 @@ class LabelingTool:
                         print(f"selected bbox id {number_value}")
                         self._canvas.change_bbox_by_id(number_value)
 
-
+    def _create_directories(self):
+        if not os.path.exists(self._dir_skipped):
+            os.makedirs(self._dir_skipped)
+        if not os.path.exists(self._dir_labeled):
+            os.makedirs(self._dir_labeled)
 
     def _update_canvas_label(self, class_label: cfg.ClassLabel):
         self._canvas.set_class_label(class_label)
 
     def _save_and_open_next(self):
-        self._save()
+        self._save(self._dir_labeled)
         self._iterate(True, 1)
 
     def _skip_image(self):
+        self._save(self._dir_skipped)
         self._iterate(True, 1)
 
     def _undo_changes(self):
@@ -266,11 +273,14 @@ class LabelingTool:
         self._current_image_id = new_image_id
 
     def _get_skip_image_list(self) -> List[int]:
-        labeled_images_names = os.listdir(self._output_folder)
+        labeled_images_names = os.listdir(self._dir_labeled)
+        skipped_images_names = os.listdir(self._dir_skipped)
+        completed_images_names = labeled_images_names + skipped_images_names
+
         images_in_annotation = self._source_annotations.get_sorted_images_names()
 
-        labeled_base_names = [
-            os.path.splitext(name)[0] for name in labeled_images_names
+        completed_base_names = [
+            os.path.splitext(name)[0] for name in completed_images_names
         ]
         source_base_names = [
             os.path.splitext(name)[0] for name in images_in_annotation
@@ -279,7 +289,7 @@ class LabelingTool:
         # collect image indices which are present both in annotation and output folder
         skip_indices = list()
         for i, image_name in enumerate(source_base_names):
-            if image_name in labeled_base_names:
+            if image_name in completed_base_names:
                 skip_indices.append(i)
 
         print('skip', skip_indices)
@@ -308,11 +318,11 @@ class LabelingTool:
         self._update_current_image_id(direction, step)
         self._reload_canvas()
 
-    def _save(self):
+    def _save(self, dir_path: str):
         json_bboxes = self._canvas.get_bboxes_json()
         img_name = self._source_annotations.get_image_name_by_id(self._current_image_id)
         base_img_name, ext = os.path.splitext(img_name)
-        output_ann_path = os.path.join(self._output_folder, f"{base_img_name}.txt")
+        output_ann_path = os.path.join(dir_path, f"{base_img_name}.txt")
         with open(output_ann_path, "w") as output_file:
             json.dump(json_bboxes, output_file)
 
