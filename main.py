@@ -130,7 +130,8 @@ class LabelingTool:
         self._output_folder: str = output_folder
         self._canvas: Canvas = Canvas()
         self._source_annotations: Annotation = self._open_annotations(annotations)
-        self._current_image_id = self._get_last_image_id()
+        self._skip_indices: List[int] = self._get_skip_image_list()
+        self._current_image_id = self._get_nearest_unlabeled_image_id(0)
         self._running: bool = True
         self._reload_canvas()
         self._run_event_loop()
@@ -188,33 +189,46 @@ class LabelingTool:
         ann.open_coco_annotation(annotation_path)
         return ann
 
+    def _get_nearest_unlabeled_image_id(self, image_id: int) -> int:
+        while image_id in self._skip_indices:
+            image_id += 1
+        return image_id
+
     def _update_current_image_id(self, direction: bool, step: int):
         new_image_id = (
             self._current_image_id + step
             if direction
             else self._current_image_id - step
         )
+
+        new_image_id = self._get_nearest_unlabeled_image_id(new_image_id)
+
         if new_image_id > self._source_annotations.images_amount:
             new_image_id = self._source_annotations.images_amount - 1
         elif new_image_id < 0:
             new_image_id = 0
         self._current_image_id = new_image_id
 
-    def _get_last_image_id(self) -> int:
+    def _get_skip_image_list(self) -> List[int]:
         labeled_images_names = os.listdir(self._output_folder)
         images_in_annotation = self._source_annotations.get_sorted_images_names()
 
         labeled_base_names = [
             os.path.splitext(name)[0] for name in labeled_images_names
         ]
-        source_base_names = [os.path.splitext(name)[0] for name in images_in_annotation]
+        source_base_names = [
+            os.path.splitext(name)[0] for name in images_in_annotation
+        ]
 
-        last_id = 0
+        # collect image indices which are present both in annotation and output folder
+        skip_indices = list()
         for i, image_name in enumerate(source_base_names):
-            if image_name not in labeled_base_names:
-                last_id = i
-                break
-        return last_id
+            if image_name in labeled_base_names:
+                skip_indices.append(i)
+
+        print('skip', skip_indices)
+
+        return skip_indices
 
     def _set_current_bboxes_to_canvas(self):
         self._canvas.set_bboxes(
@@ -231,6 +245,8 @@ class LabelingTool:
         self._set_current_bboxes_to_canvas()
         self._set_current_image_to_canvas()
         self._canvas.refresh()
+        image_name = self._source_annotations.get_image_name_by_id(self._current_image_id)
+        print(f'image id: {self._current_image_id}, image name: {image_name}')
 
     def _iterate(self, direction: bool, step: int):
         self._update_current_image_id(direction, step)
