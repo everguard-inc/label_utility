@@ -1,255 +1,259 @@
-import cv2
-import os
+import argparse
 import json
-IMAGE_FOLDER="/Users/serhii/Downloads/datasets/vest_helmet_final/images/"
-JSON_PATH='/Users/serhii/Downloads/full_train_new_without_height_width.json'
-WRITE_FOLDER = "/Users/serhii/Downloads/datasets/vest_helmet_final/testing_json/"
+import os
+import sys
+from copy import copy, deepcopy
+from typing import Union, List, Dict
+
+import cv2
+import numpy as np
+
+import config as cfg
+from data_structures import BBox, Annotation, Point
 
 
-class Color:
-    Red = (0, 0, 255)
-    Lime = (0, 255, 0)
-    Blue = (255, 0, 0)
-    LightBlue = (170, 178, 32)
-    Yellow = (0, 255, 255)
-    Cyan = (255, 255, 0)
-    Magenta = (255, 0, 255)
-    Orange = (0, 140, 255)
-    Olive = (35, 142, 107)
-    Green = (0, 128, 0)
-    Purple = (211, 0, 148)
-    Pink = (180, 20, 255)
-    Black = (0, 0, 0)
-    White = (255, 255, 255)
-    Gray = (192, 192, 192)
-    Brown = (19, 69, 139)
+class Canvas:
+    """Works with graphics"""
+
+    def __init__(self):
+        self._bboxes: List[BBox]
+        self._current_image: np.ndarray
+        self._mode: cfg.LabelingMode = cfg.LabelingMode.DRAWING
+        self._clear_image: np.ndarray
+        self._selected_class_label: cfg.ClassLabel = cfg.DEFAULT_CLASS_LABEL
+        cv2.namedWindow(cfg.WINDOW_NAME, cv2.WINDOW_NORMAL | cv2.WINDOW_GUI_NORMAL)
+        cv2.setMouseCallback(cfg.WINDOW_NAME, self._on_mouse)
+        cv2.resizeWindow(cfg.WINDOW_NAME, 900, 600)
+
+    def set_mode(self, mode: cfg.LabelingMode):
+        self._mode = mode
+
+    def set_image(self, img: np.ndarray):
+        self._clear_image = img
+
+    def refresh(self):
+        self._render_bboxes(self._bboxes)
+
+    def set_class_label(self, class_label: cfg.ClassLabel):
+        self._selected_class_label = class_label
+
+    def get_bboxes_json(self):
+        bboxes_list = list()
+        for bbox in self._bboxes:
+            bboxes_list.append(
+                [bbox.x1, bbox.y1, bbox.x2, bbox.y2, cfg.LABEL_CATEGORY_ID[bbox.label]]
+            )
+        return bboxes_list
+
+    def set_bboxes(self, bboxes):
+        self._bboxes = deepcopy(bboxes)
+
+    def draw_bbox(self):
+        region = cv2.selectROI(cfg.WINDOW_NAME, self._current_image)
+        cv2.setMouseCallback(cfg.WINDOW_NAME, self._on_mouse)
+
+        y1 = int(region[1])
+        y2 = int(region[1] + region[3])
+        x1 = int(region[0])
+        x2 = int(region[0] + region[2])
+
+        self._bboxes.append(BBox(x1, y1, x2, y2, self._selected_class_label))
+        print(f"bbox with class {self._selected_class_label} created")
+
+        self.refresh()
+
+    def _on_mouse(self, event, x, y, flags, param):
+        point = Point(x, y)
+        if event == cv2.EVENT_LBUTTONDOWN:
+            if self._mode == cfg.LabelingMode.DELETION:
+                self._delete_bbox(point)
+            if self._mode == cfg.LabelingMode.SET_LABEL:
+                self._set_label(point)
+
+            self.refresh()
+
+    def _delete_bbox(self, point: Point):
+        bbox_id = self._get_selected_bbox_id(point)
+        if bbox_id is not None:
+            print(f"bbox with id {bbox_id} deleted")
+            del self._bboxes[bbox_id]
+
+    def _set_label(self, point: Point):
+        bbox_id = self._get_selected_bbox_id(point)
+        if bbox_id is not None:
+            self._bboxes[bbox_id].label = self._selected_class_label
+            print(f"set label {self._selected_class_label} for bbox with id {bbox_id}")
+
+    def _get_selected_bbox_id(self, point: Point) -> Union[int, None]:
+        idx = None
+        for i, bbox in enumerate(self._bboxes):
+            if point in bbox:
+                idx = i
+                break
+
+        return idx
+
+    def _render_bboxes(self, bboxes: List[BBox], show_id=False):
+        self._current_image = self._clear_image.copy()
+
+        for i, bbox in enumerate(bboxes):
+            cv2.rectangle(
+                self._current_image,
+                (bbox.x1, bbox.y1),
+                (bbox.x2, bbox.y2),
+                cfg.CLASS_COLORS[bbox.label],
+                cfg.DEFAULT_BBOX_LINE_THICKNESS,
+            )
+
+            if show_id:
+                self._current_image = cv2.putText(
+                    self._current_image,
+                    str(i),
+                    (bbox.x1, bbox.y1),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    self._current_image.shape[0] * cfg.TEXTSIZE_IM_WIDTH_RATIO,
+                    cfg.TEXT_COLOR,
+                    int(
+                        self._current_image.shape[0] * cfg.TEXTTHICKNESS_IM_WIDTH_RATIO
+                    ),
+                    cv2.LINE_AA,
+                )
+
+        cv2.imshow(cfg.WINDOW_NAME, self._current_image)
 
 
+class LabelingTool:
+    """Connects user with canvas"""
 
-write_ann_dir = os.path.join(WRITE_FOLDER, "annotations")
-write_img_dir = os.path.join(WRITE_FOLDER, "images")
+    def __init__(self, annotations: str, output_folder: str, image_folder: str):
+        self._images_folder: str = image_folder
+        self._output_folder: str = output_folder
+        self._canvas: Canvas = Canvas()
+        self._source_annotations: Annotation = self._open_annotations(annotations)
+        self._current_image_id = self._get_last_image_id()
+        self._running: bool = True
+        self._reload_canvas()
+        self._run_event_loop()
 
-if not os.path.exists(write_ann_dir):
-    os.makedirs(write_ann_dir)
-if not os.path.exists(write_img_dir):
-    os.makedirs(write_img_dir)
+    def _run_event_loop(self):
+        while self._running:
+            k = cv2.waitKey()
+            if k == cfg.HotKey.SetDrawMode:
+                print("drawing mode is set")
+                self._canvas.draw_bbox()
+            elif k == cfg.HotKey.SetDeletionMode:
+                self._canvas.set_mode(cfg.LabelingMode.DELETION)
+                print("delete mode is set")
+            elif k == cfg.HotKey.SetModeChangeName:
+                self._canvas.set_mode(cfg.LabelingMode.SET_LABEL)
+                print("name changing mode is set")
+            elif k == cfg.HotKey.SkipImage:
+                self._skip_image()
+                print(
+                    f"image {self._source_annotations.get_image_name_by_id(self._current_image_id)} skipped"
+                )
+            elif k == cfg.HotKey.UndoLabeling:
+                self._undo_changes()
+                print("changes reverted")
+            elif k == cfg.HotKey.SaveAndOpenNext:
+                self._save_and_open_next()
+                print(
+                    f"opened image {self._source_annotations.get_image_name_by_id(self._current_image_id)}"
+                )
+            elif k == cfg.HotKey.Quit:
+                print("exiting")
+                self._quit()
 
-with open(JSON_PATH) as f:
-    d = json.load(f)
+            for key, class_label in cfg.ClassHotKeys.items():
+                if k == key:
+                    print(f"selected class {class_label}")
+                    self._update_canvas_label(class_label)
 
-images=[]
-images_dict={}
-for im in d["images"]:
-        images.append(im["file_name"])
-        images_dict[im["id"]]=im["file_name"]
+    def _update_canvas_label(self, class_label: cfg.ClassLabel):
+        self._canvas.set_class_label(class_label)
 
-for i in d["annotations"]:
-    i["file_name"]=images_dict[i["image_id"]]
+    def _save_and_open_next(self):
+        self._save()
+        self._iterate(True, 1)
 
-def draw_bboxes(boxes,img):
-    if len(boxes)>0:
-        for i in boxes:
-            if int(i[4])==0:
-                cv2.rectangle(img, (int(i[0]),int(i[1]),int(i[2]),int(i[3])), Color.Red, 4)
-            if int(i[4])==1:
-                cv2.rectangle(img, (int(i[0]),int(i[1]),int(i[2]),int(i[3])), Color.Yellow, 4)
-            if int(i[4])==2:
-                cv2.rectangle(img, (int(i[0]),int(i[1]),int(i[2]),int(i[3])), Color.Blue, 4)
-            if int(i[4])==3:
-                cv2.rectangle(img, (int(i[0]),int(i[1]),int(i[2]),int(i[3])), Color.Green, 4)
-            if int(i[4])==4:
-                cv2.rectangle(img, (int(i[0]),int(i[1]),int(i[2]),int(i[3])), Color.Black, 4)
-            if int(i[4])==5:
-                cv2.rectangle(img, (int(i[0]),int(i[1]),int(i[2]),int(i[3])), Color.Purple, 4)
+    def _skip_image(self):
+        self._iterate(True, 1)
 
-c=0
-for i in range(len(images)):
-    drawing=False
-    deleting=False
-    invisible=False
-    if i==0:
-        pop=0
-    if pop==2:
-        break
-    pop=0
-    print(images[c])
-    final_boxes=None
-    path=IMAGE_FOLDER+images[c]
-    img=cv2.imread(path)
-    boxes=[]
-    for box_js in d["annotations"]:
-        if box_js["file_name"]==images[c]:
-            box_new=box_js["bbox"].copy()
-            box_new.append(box_js["category_id"])
-            boxes.append(box_new)
-    #with open(IMAGE_FOLDER+"annotations/"+images[c].split(".")[0]+".txt", "r") as fp:
-        #boxes = json.load(fp)
-    draw_bboxes(boxes,img)
-    cv2.imshow('image',img)
-    draw_mouse = False
-    mode = True
-    x1,y1 = -1,-1
-    while pop<1:
-        def onMouse(event, x, y, flags, param):
-            global x1,y1,draw_mouse,mode,drawing,deleting,invisible
-            if deleting==True:
-                selected_boxes=[]
-                try:
-                    final_boxes
-                except NameError:
-                    final_boxes=boxes
-                img=cv2.imread(path)
-                draw_bboxes(final_boxes,img)
-                if event == cv2.EVENT_LBUTTONDOWN:
-                    point=x,y
-                    numbers=[]
-                    for c in range(len(final_boxes)):
-                        if final_boxes[c][0]<x<final_boxes[c][2]+final_boxes[c][0] and final_boxes[c][1]<y<final_boxes[c][3]+final_boxes[c][1]:
-                            selected_boxes.append(final_boxes[c])
-                            numbers.append(c)
-                    if len(selected_boxes)>1:
-                        img=cv2.imread(path)
-                        for b,i in enumerate(selected_boxes):
-                            img=cv2.rectangle(img, (int(i[0]),int(i[1]),int(i[2]),int(i[3])), (255, 0, 0) , 4)
-                            img=cv2.putText(img, str(b), (int(i[0]),int(i[1])), cv2.FONT_HERSHEY_SIMPLEX , int(img.shape[0]/300), (0,50,0), int(img.shape[0]/100), cv2.LINE_AA)
-                        cv2.imshow('image',img)
-                        cv2.waitKey()
-                        num = input("Which one you want to delete? 1,2 etc.\n")
-                        print(final_boxes)
-                        del final_boxes[numbers[int(int(num))]]
-                    else:
-                        del final_boxes[numbers[0]]
-                    deleting=False
-                    
-            if drawing==True:
-                try:
-                    final_boxes
-                except NameError:
-                    final_boxes=boxes
-                img=cv2.imread(path)
-                draw_bboxes(final_boxes,img)
-                if event == cv2.EVENT_LBUTTONDOWN:
-                    draw_mouse=True
-                    x1,y1 = x,y
-                elif event == cv2.EVENT_MOUSEMOVE:
-                    if draw_mouse == True:
-                        if mode == True:
-                            cv2.rectangle(img,(x1,y1),(x,y),(0,255,0),3)
-                        cv2.imshow('image',img)
-                elif event == cv2.EVENT_LBUTTONUP:
-                    draw_mouse = False
-                    if mode == True:
-                        cv2.rectangle(img,(x1,y1),(x,y),(0,255,0),2)
-                    cv2.imshow('image',img)
-                    cv2.waitKey()
-                    nums = input("What class? 0 - person,1 - with_helmet, 2 - with_vest, 3 - with_vest_and_helmet, 4 - invisible_without_vest, 5 - invisible_with_vest\n")
-                    final_x1=min(x,x1)
-                    final_x2=max(x,x1)
+    def _undo_changes(self):
+        self._set_current_bboxes_to_canvas()
+        self._reload_canvas()
 
-                    final_y1=min(y,y1)
-                    final_y2=max(y,y1)
-                    
-                    final_boxes.append([final_x1,final_y1,final_x2-final_x1,final_y2-final_y1,nums])
-                    drawing=False
-                
-            if invisible==True:
-                selected_boxes=[]
-                try:
-                    final_boxes
-                except NameError:
-                    final_boxes=boxes
-                if event == cv2.EVENT_LBUTTONDOWN:
-                    point=x,y
-                    numbers=[]
-                    for c in range(len(final_boxes)):
-                        if final_boxes[c][0]<x<final_boxes[c][2]+final_boxes[c][0] and final_boxes[c][1]<y<final_boxes[c][3]+final_boxes[c][1]:
-                            selected_boxes.append(final_boxes[c])
-                            numbers.append(c)
-                    if len(selected_boxes)>1:
-                        img=cv2.imread(path)
-                        for b,i in enumerate(selected_boxes):
-                            img=cv2.rectangle(img, (int(i[0]),int(i[1]),int(i[2]),int(i[3])), (255, 0, 0) , 4)
-                            img=cv2.putText(img, str(b), (int(i[0]),int(i[1])), cv2.FONT_HERSHEY_SIMPLEX , int(img.shape[0]/300), (0,50,0), int(img.shape[0]/100), cv2.LINE_AA)
-                        cv2.imshow('image',img)
-                        cv2.waitKey()
-                        num = input("Which one are invisible?\n")
-                        if final_boxes[c][4]==2 or final_boxes[c][4]==3:
-                                final_boxes[numbers[int(num)]][4]=5
-                        else:
-                            final_boxes[numbers[int(num)]][4]=4
+    def _open_annotations(self, annotation_path):
+        ann = Annotation()
+        ann.open_coco_annotation(annotation_path)
+        return ann
 
-                    else:
-                        for c in range(len(final_boxes)):
-                            if final_boxes[c][0]<x<final_boxes[c][2]+final_boxes[c][0] and final_boxes[c][1]<y<final_boxes[c][3]+final_boxes[c][1]:
-                                if final_boxes[c][4]==2 or final_boxes[c][4]==3:
-                                    final_boxes[c][4]=5
-                                else:
-                                    final_boxes[c][4]=4
-                            
-                if event == cv2.EVENT_RBUTTONDOWN:
-                    point=x,y
-                    numbers=[]
-                    for c in range(len(final_boxes)):
-                        if final_boxes[c][0]<x<final_boxes[c][2] and final_boxes[c][1]<y<final_boxes[c][3]:
-                            selected_boxes.append(final_boxes[c])
-                            numbers.append(c)
-                    if len(selected_boxes)>1:
-                        img=cv2.imread(path)
-                        cv2.imshow('image',img)
-                        for b,i in enumerate(selected_boxes):
-                            img=cv2.rectangle(img, (int(i[0]),int(i[1]),int(i[2]),int(i[3])), (255, 0, 0) , 4)
-                            img=cv2.putText(img, str(b), (int(i[0]),int(i[1])), cv2.FONT_HERSHEY_SIMPLEX , int(img.shape[0]/300), (0,50,0), int(img.shape[0]/100), cv2.LINE_AA)
-                        cv2.imshow('image',img)
-                        cv2.waitKey()
-                        num = input("Which one are without vest?")
-                        if final_boxes[numbers[int(num)]][4]>1:
-                                    final_boxes[numbers[int(num)]][4]=-2
+    def _update_current_image_id(self, direction: bool, step: int):
+        new_image_id = (
+            self._current_image_id + step
+            if direction
+            else self._current_image_id - step
+        )
+        if new_image_id > self._source_annotations.images_amount:
+            new_image_id = self._source_annotations.images_amount - 1
+        elif new_image_id < 0:
+            new_image_id = 0
+        self._current_image_id = new_image_id
 
-                    else:
-                        for c in range(len(final_boxes)):
-                            if final_boxes[c][0]<x<final_boxes[c][2] and final_boxes[c][1]<y<final_boxes[c][3]:
-                                if final_boxes[c][4]>1:
-                                    final_boxes[c][4]-=2
-        
-                    invisible=False
-        cv2.namedWindow('image',cv2.WINDOW_FULLSCREEN)
-        cv2.setMouseCallback('image', onMouse)
-        k=cv2.waitKey()
-        if k==ord("l"):
-            if final_boxes is None: 
-                final_boxes=boxes
-            for l,i in enumerate(final_boxes):
-                final_boxes[l][4]=final_boxes[l][4]+2
-            cv2.waitKey()
-        for cc in boxes:
-            cc[4]=int(cc[4])
-        if k==ord("w"):
-            drawing=True
-        if k==ord("d"):
-            deleting=True
-        if k==ord("i"):
-            invisible=True  
-        if k==ord("f"):
-            img=cv2.imread(path)
-            if final_boxes is None:
-                final_boxes=boxes
-            print(final_boxes)
-            draw_bboxes(final_boxes,img)
-            cv2.imshow('image',img)
-        if k==ord("n"):
-            c=c+1
-            pop=pop+1
-        if k==ord("r"):
-            pop=pop+1
-        if k==ord("y"):
-            img=cv2.imread(path)
-            img_write=WRITE_FOLDER+"images/"+images[c].split(".")[0]+".jpg"
-            cv2.imwrite(img_write, img)
-            with open(WRITE_FOLDER+"annotations/"+images[c].split(".")[0]+".txt", "w") as output:
-                json.dump(boxes, output)
-            c=c+1
-            pop=pop+1
-        elif k==ord("q"):
-            pop=2
-            cv2.destroyAllWindows()
-            break
+    def _get_last_image_id(self) -> int:
+        labeled_images_names = os.listdir(self._output_folder)
+        images_in_annotation = self._source_annotations.get_sorted_images_names()
+
+        labeled_base_names = [
+            os.path.splitext(name)[0] for name in labeled_images_names
+        ]
+        source_base_names = [os.path.splitext(name)[0] for name in images_in_annotation]
+
+        last_id = 0
+        for i, image_name in enumerate(source_base_names):
+            if image_name not in labeled_base_names:
+                last_id = i
+                break
+        return last_id
+
+    def _set_current_bboxes_to_canvas(self):
+        self._canvas.set_bboxes(
+            self._source_annotations.get_bboxes_for_image(self._current_image_id)
+        )
+
+    def _set_current_image_to_canvas(self):
+        img_name = self._source_annotations.get_image_name_by_id(self._current_image_id)
+        img_path = os.path.join(self._images_folder, img_name)
+        img = cv2.imread(img_path)
+        self._canvas.set_image(img)
+
+    def _reload_canvas(self):
+        self._set_current_bboxes_to_canvas()
+        self._set_current_image_to_canvas()
+        self._canvas.refresh()
+
+    def _iterate(self, direction: bool, step: int):
+        self._update_current_image_id(direction, step)
+        self._reload_canvas()
+
+    def _save(self):
+        json_bboxes = self._canvas.get_bboxes_json()
+        img_name = self._source_annotations.get_image_name_by_id(self._current_image_id)
+        base_img_name, ext = os.path.splitext(img_name)
+        output_ann_path = os.path.join(self._output_folder, f"{base_img_name}.txt")
+        with open(output_ann_path, "w") as output_file:
+            json.dump(json_bboxes, output_file)
+
+    def _quit(self):
+        cv2.destroyAllWindows()
+        sys.exit(0)
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--input_coco")
+    parser.add_argument("--output_folder")
+    parser.add_argument("--images")
+    args = parser.parse_args()
+
+    ltool = LabelingTool(args.input_coco, args.output_folder, args.images)
