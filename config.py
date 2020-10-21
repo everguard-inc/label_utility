@@ -107,3 +107,9 @@ TEXTSIZE_IM_WIDTH_RATIO = 0.002
 
 DIRECTORY_FOR_SKIPPED_NAME = 'skipped'
 DIRECTORY_FOR_LABELED_NAME = 'labeled'
+
+VARIABLES_FILE_NAME = 'last_frame_id.json'
+
+
+class PresistentVariableName:
+    IMAGE_ID = 'img_id'

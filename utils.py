@@ -22,16 +22,13 @@ class AnnotationStorage:
         self._dir_skipped = os.path.join(self._output_folder, cfg.DIRECTORY_FOR_SKIPPED_NAME)
         self._dir_labeled = os.path.join(self._output_folder, cfg.DIRECTORY_FOR_LABELED_NAME)
 
+        self._variables_file_path = os.path.join(os.path.dirname(annotations), cfg.VARIABLES_FILE_NAME)
+
         self._images_info_list: List[Dict] = list()
         self._images_info_dict: Dict[str, List[BBox]] = dict()
         self._open_annotations(annotations)
 
-        self._skip_indices: List[int] = list()
-        if start_frame_id is None:
-            self._skip_indices = self._get_skip_image_list()
         self._current_image_id: int = self._set_start_frame_id(start_frame_id)
-
-
 
     @property
     def current_image_name(self):
@@ -72,12 +69,27 @@ class AnnotationStorage:
         self._open_coco_annotation(annotation_path)
 
     def _set_start_frame_id(self, frame_id: Union[int, str]):
+        # try to open user specified index
         if frame_id is not None:
             frame_id = int(frame_id)
             if 0 <= frame_id < self.images_amount:
                 return frame_id
         else:
-            return self._get_nearest_unlabeled_image_id(0)
+            print('Frame with specified id not exist')
+        
+        # try to open previously saved index in json file
+        if os.path.isfile(self._variables_file_path):
+            with open(self._variables_file_path, 'r') as json_file:
+                values = json.load(json_file)
+            if cfg.PresistentVariableName.IMAGE_ID in values:
+                return int(values[cfg.PresistentVariableName.IMAGE_ID])
+            
+        # return first image index
+        return 0
+    
+    def _save_image_id_to_variables_file(self):
+        with open(self._variables_file_path, 'w') as json_file:
+            json.dump({cfg.PresistentVariableName.IMAGE_ID: self.current_image_id}, json_file)
 
     def _update_current_image_id(self, direction: bool, step: int):
         new_image_id = (
@@ -86,43 +98,13 @@ class AnnotationStorage:
             else self._current_image_id - step
         )
 
-        new_image_id = self._get_nearest_unlabeled_image_id(new_image_id)
-
         if new_image_id > self.images_amount:
             new_image_id = self.images_amount - 1
         elif new_image_id < 0:
             new_image_id = 0
         self._current_image_id = new_image_id
 
-    def _get_nearest_unlabeled_image_id(self, image_id: int) -> int:
-        while image_id in self._skip_indices:
-            image_id += 1
-        return image_id
-
-    def _get_skip_image_list(self) -> List[int]:
-        labeled_images_names = os.listdir(self._dir_labeled)
-        skipped_images_names = os.listdir(self._dir_skipped)
-        completed_images_names = labeled_images_names + skipped_images_names
-
-        images_in_annotation = self.get_sorted_images_names()
-
-        completed_base_names = [
-            os.path.splitext(name)[0] for name in completed_images_names
-        ]
-
-        source_base_names = [
-            os.path.splitext(name)[0] for name in images_in_annotation
-        ]
-
-        # collect image indices which are present both in annotation and output folder
-        skip_indices = list()
-        for i, image_name in enumerate(source_base_names):
-            if image_name in completed_base_names:
-                skip_indices.append(i)
-
-        print('skip', skip_indices)
-
-        return skip_indices
+        self._save_image_id_to_variables_file()
 
     def _open_coco_annotation(self, annotation_path: str) -> NoReturn:
 
