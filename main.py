@@ -78,7 +78,7 @@ class LabelingTool:
                 for key, number_value in cfg.NumberHotKeys.items():
                     if k == key:
                         print(f"selected bbox id {number_value}")
-                        self._canvas.change_bbox_by_id(number_value)
+                        self._canvas.specify_bbox(number_value)
 
     def _create_directories(self):
         if not os.path.exists(self._dir_skipped):
