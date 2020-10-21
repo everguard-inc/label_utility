@@ -9,8 +9,7 @@ optional arguments:
   --input_coco INPUT_COCO           path to json with annotations in COCO format
   --output_folder OUTPUT_FOLDER     directory to save corrected annotations
   --images IMAGES                   directory with images
-  --start_frame_id START_FRAME_ID   frame number from which to start labeling. 
-                                    If argument not specified the tool iterates over unlabeled frames only
+  --start_frame_id START_FRAME_ID   frame number from which to start labeling
 ```
 
 #### Control keys

@@ -138,10 +138,10 @@ class LabelingTool:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--input_coco")
-    parser.add_argument("--output_folder")
-    parser.add_argument("--images")
-    parser.add_argument("--start_frame_id")
+    parser.add_argument("--input_coco", help='path to json with annotations in COCO format')
+    parser.add_argument("--output_folder", help='directory to save corrected annotations')
+    parser.add_argument("--images", help='directory with images')
+    parser.add_argument("--start_frame_id", help='frame number from which to start labeling')
     args = parser.parse_args()
 
     ltool = LabelingTool(args.input_coco, args.output_folder, args.images, args.start_frame_id)
