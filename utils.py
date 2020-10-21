@@ -4,13 +4,188 @@ import os
 import sys
 from copy import deepcopy
 
-from typing import Union, List, Dict
+from typing import Union, List, Dict, NoReturn
 
 import cv2
 import numpy as np
 
 import config as cfg
-from data_structures import BBox, Annotation, Point
+from data_structures import BBox, Point
+
+
+class AnnotationStorage:
+
+    def __init__(self, annotations: str, output_folder: str, image_folder: str, start_frame_id: str=None):
+
+        self._images_folder: str = image_folder
+        self._output_folder: str = output_folder
+        self._dir_skipped = os.path.join(self._output_folder, cfg.DIRECTORY_FOR_SKIPPED_NAME)
+        self._dir_labeled = os.path.join(self._output_folder, cfg.DIRECTORY_FOR_LABELED_NAME)
+
+        self._images_info_list: List[Dict] = list()
+        self._images_info_dict: Dict[str, List[BBox]] = dict()
+        self._open_annotations(annotations)
+
+        self._skip_indices: List[int] = list()
+        if start_frame_id is None:
+            self._skip_indices = self._get_skip_image_list()
+        self._current_image_id: int = self._set_start_frame_id(start_frame_id)
+
+
+
+    @property
+    def current_image_name(self):
+        return self._images_info_list[self._current_image_id]['image_name']
+
+    @property
+    def images_amount(self):
+        return len(self._images_info_list)
+
+    @property
+    def current_image_id(self):
+        return self._current_image_id
+
+    @property
+    def current_bboxes(self):
+        return self._images_info_list[self._current_image_id]["bboxes"]
+
+    def get_bboxes_by_image_id(self, image_id: int) -> Union[List[BBox], None]:
+        if image_id < len(self._images_info_list):
+            return self._images_info_list[image_id]["bboxes"]
+        return None
+
+    def get_bboxes_by_image_name(self, img_name: str) -> Union[List[BBox], None]:
+        if img_name in self._images_info_dict:
+            return self._images_info_dict[img_name]
+        return None
+
+    def get_image_name_by_id(self, image_id: int) -> str:
+        return self._images_info_list[image_id]["image_name"]
+
+    def get_sorted_images_names(self) -> List[str]:
+        return [image_name["image_name"] for image_name in self._images_info_list]
+
+    def change_current_image_id(self, direction, step):
+        self._update_current_image_id(direction, step)
+
+    def _open_annotations(self, annotation_path):
+        self._open_coco_annotation(annotation_path)
+
+    def _set_start_frame_id(self, frame_id: Union[int, str]):
+        if frame_id is not None:
+            frame_id = int(frame_id)
+            if 0 <= frame_id < self.images_amount:
+                return frame_id
+        else:
+            return self._get_nearest_unlabeled_image_id(0)
+
+    def _update_current_image_id(self, direction: bool, step: int):
+        new_image_id = (
+            self._current_image_id + step
+            if direction
+            else self._current_image_id - step
+        )
+
+        new_image_id = self._get_nearest_unlabeled_image_id(new_image_id)
+
+        if new_image_id > self.images_amount:
+            new_image_id = self.images_amount - 1
+        elif new_image_id < 0:
+            new_image_id = 0
+        self._current_image_id = new_image_id
+
+    def _get_nearest_unlabeled_image_id(self, image_id: int) -> int:
+        while image_id in self._skip_indices:
+            image_id += 1
+        return image_id
+
+    def _get_skip_image_list(self) -> List[int]:
+        labeled_images_names = os.listdir(self._dir_labeled)
+        skipped_images_names = os.listdir(self._dir_skipped)
+        completed_images_names = labeled_images_names + skipped_images_names
+
+        images_in_annotation = self.get_sorted_images_names()
+
+        completed_base_names = [
+            os.path.splitext(name)[0] for name in completed_images_names
+        ]
+
+        source_base_names = [
+            os.path.splitext(name)[0] for name in images_in_annotation
+        ]
+
+        # collect image indices which are present both in annotation and output folder
+        skip_indices = list()
+        for i, image_name in enumerate(source_base_names):
+            if image_name in completed_base_names:
+                skip_indices.append(i)
+
+        print('skip', skip_indices)
+
+        return skip_indices
+
+    def _open_coco_annotation(self, annotation_path: str) -> NoReturn:
+
+        with open(annotation_path, "r") as jfile:
+            coco_ann = json.load(jfile)
+
+        images = coco_ann["images"]
+        categories = coco_ann["categories"]
+        labels = coco_ann["annotations"]
+
+        image_dict = dict()
+        category_dict = dict()
+
+        # images
+        for image_info in images:
+            image_dict[image_info["id"]] = image_info["file_name"]
+
+            self._images_info_dict[image_info["file_name"]] = list()
+
+        # categories
+        for category_info in categories:
+            category_name = category_info["name"]
+
+            if category_name in cfg.misspelling_correction:
+                category_name = cfg.misspelling_correction[category_name]
+
+            category_dict[category_info["id"] - 1] = {
+                "class_name": category_name,
+            }
+
+        # labels
+        for i, label_info in enumerate(labels):
+
+            x1 = label_info["bbox"][0]
+            y1 = label_info["bbox"][1]
+            w = label_info["bbox"][2]
+            h = label_info["bbox"][3]
+
+            image_name = image_dict[label_info["image_id"]]
+
+            cat_id = label_info["category_id"]
+            self._images_info_dict[image_name].append(
+                BBox(
+                    x1,
+                    y1,
+                    x1 + w,
+                    y1 + h,
+                    cfg.CATEGORY_ID_TO_LABEL[label_info["category_id"]],
+                )
+            )
+
+        # converting image dict to list
+        for image_name, bbox_list in self._images_info_dict.items():
+            self._images_info_list.append(
+                {
+                    "image_name": image_name,
+                    "bboxes": bbox_list,
+                }
+            )
+
+        # sort by image name
+        self._images_info_list.sort(key=lambda x: x["image_name"])
+
 
 
 class Canvas:

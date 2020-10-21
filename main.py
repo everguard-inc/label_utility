@@ -10,36 +10,26 @@ import cv2
 import numpy as np
 
 import config as cfg
-from data_structures import BBox, Annotation, Point
-from utils import Canvas
+from data_structures import BBox, Point
+from utils import Canvas, AnnotationStorage
 
 
 class LabelingTool:
     """Connects user with canvas"""
 
-    def __init__(self, annotations: str, output_folder: str, image_folder: str, start_frame_id: str=None):
+    def __init__(self, annotation_path: str, output_folder: str, image_folder: str, start_frame_id: str=None):
         self._images_folder: str = image_folder
-        self._output_folder: str = output_folder
-        self._dir_skipped = os.path.join(self._output_folder, cfg.DIRECTORY_FOR_SKIPPED_NAME)
-        self._dir_labeled = os.path.join(self._output_folder, cfg.DIRECTORY_FOR_LABELED_NAME)
+        self._dir_skipped = os.path.join(output_folder, cfg.DIRECTORY_FOR_SKIPPED_NAME)
+        self._dir_labeled = os.path.join(output_folder, cfg.DIRECTORY_FOR_LABELED_NAME)
         self._create_directories()
         self._canvas: Canvas = Canvas()
-        self._source_annotations: Annotation = self._open_annotations(annotations)
-        self._skip_indices: List[int] = list()
-        if start_frame_id is None:
-            self._skip_indices = self._get_skip_image_list()
-        self._current_image_id: int = self._set_start_frame_id(start_frame_id)
+        self._annotations: AnnotationStorage = AnnotationStorage(annotation_path,
+                                                                 output_folder,
+                                                                 image_folder,
+                                                                 start_frame_id)
         self._running: bool = True
         self._reload_canvas()
         self._run_event_loop()
-
-    def _set_start_frame_id(self, frame_id: Union[int, str]):
-        if frame_id is not None:
-            frame_id = int(frame_id)
-            if 0 <= frame_id < self._source_annotations.images_amount:
-                return frame_id
-        else:
-            return self._get_nearest_unlabeled_image_id(0)
 
     def _run_event_loop(self):
         while self._running:
@@ -100,63 +90,13 @@ class LabelingTool:
     def _undo_changes(self):
         self._set_current_bboxes_to_canvas()
         self._reload_canvas()
-
-    def _open_annotations(self, annotation_path):
-        ann = Annotation()
-        ann.open_coco_annotation(annotation_path)
-        return ann
-
-    def _get_nearest_unlabeled_image_id(self, image_id: int) -> int:
-        while image_id in self._skip_indices:
-            image_id += 1
-        return image_id
-
-    def _update_current_image_id(self, direction: bool, step: int):
-        new_image_id = (
-            self._current_image_id + step
-            if direction
-            else self._current_image_id - step
-        )
-
-        new_image_id = self._get_nearest_unlabeled_image_id(new_image_id)
-
-        if new_image_id > self._source_annotations.images_amount:
-            new_image_id = self._source_annotations.images_amount - 1
-        elif new_image_id < 0:
-            new_image_id = 0
-        self._current_image_id = new_image_id
-
-    def _get_skip_image_list(self) -> List[int]:
-        labeled_images_names = os.listdir(self._dir_labeled)
-        skipped_images_names = os.listdir(self._dir_skipped)
-        completed_images_names = labeled_images_names + skipped_images_names
-
-        images_in_annotation = self._source_annotations.get_sorted_images_names()
-
-        completed_base_names = [
-            os.path.splitext(name)[0] for name in completed_images_names
-        ]
-        source_base_names = [
-            os.path.splitext(name)[0] for name in images_in_annotation
-        ]
-
-        # collect image indices which are present both in annotation and output folder
-        skip_indices = list()
-        for i, image_name in enumerate(source_base_names):
-            if image_name in completed_base_names:
-                skip_indices.append(i)
-
-        print('skip', skip_indices)
-
-        return skip_indices
+        print("changes reverted")
 
     def _set_current_bboxes_to_canvas(self):
-        self._canvas.set_bboxes(
-            self._source_annotations.get_bboxes_for_image(self._current_image_id)
-        )
+        self._canvas.set_bboxes(self._annotations.current_bboxes)
 
     def _set_current_image_to_canvas(self):
-        img_name = self._source_annotations.get_image_name_by_id(self._current_image_id)
+        img_name = self._annotations.current_image_name
         img_path = os.path.join(self._images_folder, img_name)
         img = cv2.imread(img_path)
         self._canvas.set_image(img)
@@ -165,15 +105,14 @@ class LabelingTool:
         self._set_current_bboxes_to_canvas()
         self._set_current_image_to_canvas()
         self._canvas.refresh()
-        image_name = self._source_annotations.get_image_name_by_id(self._current_image_id)
 
     def _iterate(self, direction: bool, step: int):
-        self._update_current_image_id(direction, step)
+        self._annotations.change_current_image_id(direction, step)
         self._reload_canvas()
 
     def _save(self, dir_path: str):
         json_bboxes = self._canvas.get_bboxes_json()
-        img_name = self._source_annotations.get_image_name_by_id(self._current_image_id)
+        img_name = self._annotations.current_image_name
         base_img_name, ext = os.path.splitext(img_name)
         output_ann_path = os.path.join(dir_path, f"{base_img_name}.txt")
         with open(output_ann_path, "w") as output_file:
