@@ -226,6 +226,8 @@ class Canvas:
 
     def set_bboxes(self, bboxes):
         self._bboxes = deepcopy(bboxes)
+        self._clear_keyboard_key_to_bbox_id_mapper()
+        self._state: cfg.CanvasState = cfg.CanvasState.NORMAL
 
     def specify_bbox(self, number: int):
 
