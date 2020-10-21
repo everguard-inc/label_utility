@@ -2,11 +2,10 @@
 
 #### Run
 ```
-python main.py [-h] [--input_coco INPUT_COCO] [--output_folder OUTPUT_FOLDER]
+python main.py [--input_coco INPUT_COCO] [--output_folder OUTPUT_FOLDER]
                [--images IMAGES] [--start_frame_id START_FRAME_ID]
 
 optional arguments:
-  -h, --help                        show this help message and exit
   --input_coco INPUT_COCO           path to json with annotations in COCO format
   --output_folder OUTPUT_FOLDER     directory to save corrected annotations
   --images IMAGES                   directory with images
@@ -18,7 +17,9 @@ optional arguments:
 | Key | Action | 
 | --- | --- |
 | Y  | Save and open next image | 
-| N  | Skip image | 
+| N  | Mark image as skipped and open next image | 
+| X  | Open next image without saving | 
+| Z  | Open previous image without saving | 
 | R  | Undo | 
 | W  | Draw bbox |
 | D  | Delete mode |
@@ -53,5 +54,4 @@ optional arguments:
 2. Left click on bbox
 
 #### Select overlapping bboxes
-When the user clicks on a point belonging to more than one bbox, the tool prompts him to press the bbox index on the keyboard.
-
+When you click a point that is included in more than one bbox, then you need to indicate from the keyboard which bbox was selected.
