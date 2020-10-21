@@ -35,7 +35,7 @@ class LabelingTool:
         while self._running:
             k = cv2.waitKey()
             if k == cfg.HotKey.SetDrawMode:
-                print("drawing mode is set")
+                print("draw bbox")
                 self._canvas.draw_bbox()
             elif k == cfg.HotKey.SetDeletionMode:
                 self._canvas.set_mode(cfg.LabelingMode.DELETION)
@@ -43,19 +43,14 @@ class LabelingTool:
             elif k == cfg.HotKey.SetModeChangeName:
                 self._canvas.set_mode(cfg.LabelingMode.SET_LABEL)
                 print("name changing mode is set")
-            elif k == cfg.HotKey.SkipImage:
-                print(
-                    f"image id: {self._current_image_id}, image name: {self._source_annotations.get_image_name_by_id(self._current_image_id)} skipped"
-                )
-                self._skip_image()
+            elif k == cfg.HotKey.MarkSkipped:
+                self._mark_as_skiped()
             elif k == cfg.HotKey.UndoLabeling:
                 self._undo_changes()
-                print("changes reverted")
             elif k == cfg.HotKey.SaveAndOpenNext:
                 self._save_and_open_next()
                 print(f'image id: {self._current_image_id}, image name: {self._source_annotations.get_image_name_by_id(self._current_image_id)} saved')
             elif k == cfg.HotKey.Quit:
-                print("exiting")
                 self._quit()
 
             if self._canvas.state == cfg.CanvasState.NORMAL:
@@ -81,10 +76,18 @@ class LabelingTool:
 
     def _save_and_open_next(self):
         self._save(self._dir_labeled)
+        img_name = self._annotations.current_image_name
+        img_id = self._annotations.current_image_id
+        print(f"image id: {img_id}, image name: {img_name} annotation saved in labeled folder")
+
         self._iterate(True, 1)
 
-    def _skip_image(self):
+    def _mark_as_skiped(self):
         self._save(self._dir_skipped)
+        img_name = self._annotations.current_image_name
+        img_id = self._annotations.current_image_id
+        print(f"image id: {img_id}, image name: {img_name} annotation saved in skipped folder")
+
         self._iterate(True, 1)
 
     def _undo_changes(self):
@@ -109,6 +112,9 @@ class LabelingTool:
     def _iterate(self, direction: bool, step: int):
         self._annotations.change_current_image_id(direction, step)
         self._reload_canvas()
+        img_name = self._annotations.current_image_name
+        img_id = self._annotations.current_image_id
+        print(f"image id: {img_id}, image name: {img_name} opened")
 
     def _save(self, dir_path: str):
         json_bboxes = self._canvas.get_bboxes_json()
@@ -120,6 +126,7 @@ class LabelingTool:
 
     def _quit(self):
         cv2.destroyAllWindows()
+        print("exiting")
         sys.exit(0)
 
 
