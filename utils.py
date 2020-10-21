@@ -65,8 +65,40 @@ class AnnotationStorage:
     def change_current_image_id(self, direction, step):
         self._update_current_image_id(direction, step)
 
+    def update_current_image_bboxes(self, bboxes: List[BBox]):
+        self._images_info_dict[self.current_image_name] = bboxes
+        self._get_list_image_values_from_dict()
+
     def _open_annotations(self, annotation_path):
         self._open_coco_annotation(annotation_path)
+        self._update_annotations_with_labeled_annotations()
+
+    def _update_annotations_with_labeled_annotations(self):
+        output_annotation_names = os.listdir(self._dir_labeled)
+        for ann_name in output_annotation_names:
+            img_name = f'{os.path.splitext(ann_name)[0]}.jpg'
+            ann_path = os.path.join(self._dir_labeled, ann_name)
+            with open(ann_path, 'r') as json_file:
+                ann_values = json.load(json_file)
+
+            if img_name in self._images_info_dict:
+                self._images_info_dict[img_name] = []
+                for bbox in ann_values:
+                    self._images_info_dict[img_name].append(
+                        BBox(bbox[0], bbox[1], bbox[2], bbox[3], cfg.CATEGORY_ID_TO_LABEL[bbox[4]],
+                ))
+
+        self._get_list_image_values_from_dict()
+
+    def _get_list_image_values_from_dict(self):
+        self._images_info_list = []
+        for image_name, bbox_list in self._images_info_dict.items():
+            self._images_info_list.append(
+                {
+                    "image_name": image_name,
+                    "bboxes": bbox_list,
+                }
+            )
 
     def _set_start_frame_id(self, frame_id: Union[int, str]):
         # try to open user specified index
@@ -74,8 +106,11 @@ class AnnotationStorage:
             frame_id = int(frame_id)
             if 0 <= frame_id < self.images_amount:
                 return frame_id
+            else:
+                print('Frame with specified id not exist')
         else:
-            print('Frame with specified id not exist')
+            print('no frame id specified')
+
         
         # try to open previously saved index in json file
         if os.path.isfile(self._variables_file_path):
@@ -157,13 +192,7 @@ class AnnotationStorage:
             )
 
         # converting image dict to list
-        for image_name, bbox_list in self._images_info_dict.items():
-            self._images_info_list.append(
-                {
-                    "image_name": image_name,
-                    "bboxes": bbox_list,
-                }
-            )
+        self._get_list_image_values_from_dict()
 
         # sort by image name
         self._images_info_list.sort(key=lambda x: x["image_name"])
@@ -190,6 +219,13 @@ class Canvas:
     @property
     def state(self):
         return self._state
+
+    @property
+    def bboxes(self):
+        return deepcopy(self._bboxes)
+
+    def set_bboxes(self, bboxes):
+        self._bboxes = deepcopy(bboxes)
 
     def specify_bbox(self, number: int):
 
@@ -229,8 +265,6 @@ class Canvas:
             )
         return bboxes_list
 
-    def set_bboxes(self, bboxes):
-        self._bboxes = deepcopy(bboxes)
 
     def draw_bbox(self):
         region = cv2.selectROI(cfg.WINDOW_NAME, self._current_image)

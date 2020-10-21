@@ -49,7 +49,10 @@ class LabelingTool:
                 self._undo_changes()
             elif k == cfg.HotKey.SaveAndOpenNext:
                 self._save_and_open_next()
-                print(f'image id: {self._current_image_id}, image name: {self._source_annotations.get_image_name_by_id(self._current_image_id)} saved')
+            elif k == cfg.HotKey.OpenNext:
+                self._iterate(True, 1)
+            elif k == cfg.HotKey.OpenPrevious:
+                self._iterate(False, 1)
             elif k == cfg.HotKey.Quit:
                 self._quit()
 
@@ -108,13 +111,13 @@ class LabelingTool:
         self._set_current_bboxes_to_canvas()
         self._set_current_image_to_canvas()
         self._canvas.refresh()
+        img_name = self._annotations.current_image_name
+        img_id = self._annotations.current_image_id
+        print(f"image id: {img_id}, image name: {img_name} opened")
 
     def _iterate(self, direction: bool, step: int):
         self._annotations.change_current_image_id(direction, step)
         self._reload_canvas()
-        img_name = self._annotations.current_image_name
-        img_id = self._annotations.current_image_id
-        print(f"image id: {img_id}, image name: {img_name} opened")
 
     def _save(self, dir_path: str):
         json_bboxes = self._canvas.get_bboxes_json()
@@ -123,6 +126,9 @@ class LabelingTool:
         output_ann_path = os.path.join(dir_path, f"{base_img_name}.txt")
         with open(output_ann_path, "w") as output_file:
             json.dump(json_bboxes, output_file)
+
+        # also save bboxes to annotations
+        self._annotations.update_current_image_bboxes(self._canvas.bboxes)
 
     def _quit(self):
         cv2.destroyAllWindows()

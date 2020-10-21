@@ -38,9 +38,11 @@ class HotKey:
     SetDeletionMode = ord("d")
     SetModeChangeName = ord("i")
     SaveAndOpenNext = ord("y")
-    SkipImage = ord("n")
+    MarkSkipped = ord("n")
     Quit = ord("q")
     UndoLabeling = ord("r")
+    OpenNext = ord("x")
+    OpenPrevious = ord("z")
 
 
 ClassHotKeys = {
