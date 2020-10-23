@@ -25,8 +25,8 @@ class ClassLabel:
     IN_VEST_NO_HARDHAT = "with_vest"
     NO_VEST_IN_HARDHAT = "with_helmet"
     NO_VEST_NO_HARDHAT = "person"
-    INVISIBLE_IN_VEST = "invisible_in_vest"
-    INVISIBLE_NO_VEST = "invisible_no_vest"
+    INVISIBLE_IN_VEST = "invisible_with_vest"
+    INVISIBLE_NO_VEST = "invisible_without_vest"
 
 
 DEFAULT_CLASS_LABEL = ClassLabel.IN_VEST_IN_HARDHAT
@@ -77,26 +77,21 @@ CLASS_COLORS = {
 }
 
 LABEL_CATEGORY_ID = {
-    ClassLabel.NO_VEST_NO_HARDHAT: 0,
-    ClassLabel.NO_VEST_IN_HARDHAT: 1,
-    ClassLabel.IN_VEST_NO_HARDHAT: 2,
-    ClassLabel.IN_VEST_IN_HARDHAT: 3,
-    ClassLabel.INVISIBLE_NO_VEST: 4,
-    ClassLabel.INVISIBLE_IN_VEST: 5,
+    ClassLabel.NO_VEST_NO_HARDHAT: 1,
+    ClassLabel.NO_VEST_IN_HARDHAT: 2,
+    ClassLabel.IN_VEST_NO_HARDHAT: 3,
+    ClassLabel.IN_VEST_IN_HARDHAT: 4,
+    ClassLabel.INVISIBLE_NO_VEST: 5,
+    ClassLabel.INVISIBLE_IN_VEST: 6,
 }
 
 CATEGORY_ID_TO_LABEL = {
-    0: ClassLabel.NO_VEST_NO_HARDHAT,
-    1: ClassLabel.NO_VEST_IN_HARDHAT,
-    2: ClassLabel.IN_VEST_NO_HARDHAT,
-    3: ClassLabel.IN_VEST_IN_HARDHAT,
-    4: ClassLabel.INVISIBLE_NO_VEST,
-    5: ClassLabel.INVISIBLE_IN_VEST,
-}
-
-misspelling_correction = {
-    "unvisible_in_vest": "invisible_in_vest",
-    "unvisible_not_in_vest": "invisible_no_vest",
+    1: ClassLabel.NO_VEST_NO_HARDHAT,
+    2: ClassLabel.NO_VEST_IN_HARDHAT,
+    3: ClassLabel.IN_VEST_NO_HARDHAT,
+    4: ClassLabel.IN_VEST_IN_HARDHAT,
+    5: ClassLabel.INVISIBLE_NO_VEST,
+    6: ClassLabel.INVISIBLE_IN_VEST,
 }
 
 
