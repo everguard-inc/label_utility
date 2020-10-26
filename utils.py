@@ -163,9 +163,6 @@ class AnnotationStorage:
         for category_info in categories:
             category_name = category_info["name"]
 
-            if category_name in cfg.misspelling_correction:
-                category_name = cfg.misspelling_correction[category_name]
-
             category_dict[category_info["id"] - 1] = {
                 "class_name": category_name,
             }
